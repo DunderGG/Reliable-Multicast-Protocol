@@ -43,7 +43,7 @@ public class MCmodule extends Multicaster implements BasicCommunicator
 		try
 		{
 			hosts = SetupParser.parseFile("localhostsetup");
-			int numberofclients = Integer.parseInt(setup.get(0)[0]);
+			int numberofclients = Integer.parseInt(hosts.get(0)[0]);
             String me[] = hosts.get(id+1);
             int myport = Integer.parseInt(me[1]);
             
