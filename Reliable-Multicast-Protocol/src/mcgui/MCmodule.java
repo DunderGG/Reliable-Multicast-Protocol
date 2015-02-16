@@ -1,34 +1,86 @@
 package mcgui;
+import java.io.IOException;
+import java.util.ArrayList;
 
-public class MCmodule extends Multicaster
+import mcgui.*;
+
+/*
+ * AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
+ * Version: 1.0
+ * 
+ * 		Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
+ *		
+ *
+ *		TODO: Implement a reliable and ordered multicast, driven by a provided GUI and pre-setup TCP connections.
+ *				Needs to cope with crashing processes, but not joining processes. 
+ * 
+ */
+
+
+public class MCmodule extends Multicaster implements BasicCommunicator
 {
 
+	public MCmodule()
+	{
+		System.out.println("Hello World");
+	}
+	
+	//Implemented from the interface BasicCommunicator
+	//Will be used for sending a message to a specific receiver
+	@Override
+	public void basicsend(int receiver, Message message)
+	{
+		System.out.println("Entered function: basicsend(), I am id #" + this.getId());
+		System.out.println("receiver: " + receiver);
+		System.out.println("message: " +((MCmessage) message).getMessage());
+	}
+	
+	//Extended from the abstract class Multicaster
 	@Override
 	public void init() 
 	{
-		// TODO Auto-generated method stub
-		
+		ArrayList<String[]> hosts = null;
+		try
+		{
+			hosts = SetupParser.parseFile("localhostsetup");
+			int numberofclients = Integer.parseInt(setup.get(0)[0]);
+            String me[] = hosts.get(id+1);
+            int myport = Integer.parseInt(me[1]);
+            
+		} catch (IOException e)
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
+	//Extended from the abstract class Multicaster
+	//Gets called whenever the user presses the "cast"-button in the GUI
+	//Will call the function basicsend() to actually send the entered message
 	@Override
 	public void cast(String messagetext)
 	{
-		// TODO Auto-generated method stub
+		System.out.println("Entered function: cast(), I am id #" + this.getId());
+		int receiver = this.getId();
 		
+		MCmessage message = new MCmessage(receiver, messagetext);
+		
+		basicsend(receiver, (Message)message);
 	}
 
+	//Extended from the abstract class Multicaster
 	@Override
 	public void basicreceive(int peer, Message message)
 	{
-		// TODO Auto-generated method stub
 		
 	}
 
+	//Extended from the abstract class Multicaster
 	@Override
 	public void basicpeerdown(int peer)
 	{
-		// TODO Auto-generated method stub
 		
 	}
+
 
 }
