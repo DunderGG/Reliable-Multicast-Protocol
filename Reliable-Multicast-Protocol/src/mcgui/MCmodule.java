@@ -10,7 +10,10 @@ import java.util.ArrayList;
  * Version: 1.0
  * 
  * 		Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
+ *
+ *		SOURCE: 	E:\Program\Git\repository\Reliable-Multicast-Protocol\Reliable-Multicast-Protocol\src
  *		
+ *		RUN WITH: 	java mcgui.Main mcgui.MCmodule 1 mcgui\localhostsetup		
  *
  *		TODO: Implement a reliable and ordered multicast, driven by a provided GUI and pre-setup TCP connections.
  *				Needs to cope with crashing processes, but not joining processes. 
@@ -62,7 +65,7 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		
 		try
 		{
-			setup = SetupParser.parseFile("mcgui/localhostsetup");
+			setup = SetupParser.parseFile("mcgui\\localhostsetup");
 
 			System.out.println("Contents of setup file: ");
 			for(String[] row : setup)
@@ -133,9 +136,10 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		//Set the peer id for the message, to be used for deliver().
 		message.setId(this.getId());
 		
-		//
+		//Create a SHA-256 hash of the message + host-ID + timestamp.
 		md.update( (message.getMessage()+message.getId()+message.getTimestamp()).getBytes() );
 		byte[] msgHash = md.digest();
+		//Add the hash to the message.
 		message.setHash(msgHash);
 		
 		//Add the message to our list for future handling.
@@ -151,7 +155,8 @@ public class MCmodule extends Multicaster implements MulticasterUI
 					System.out.println("Sending to id: " + i);				
 					System.out.println("Sending message: " + message);
 					System.out.println("Message has timestamp: " + message.getTimestamp());
-					//Call basicsend from BasicCommunicator; arguments are the id and the message.
+					//Call basicsend() from BasicCommunicator; 
+					//arguments are the host-ID of the intended recipient and the message.
 					communicator.basicsend(i, (Message) message);
 				}
 			}
@@ -160,7 +165,7 @@ public class MCmodule extends Multicaster implements MulticasterUI
 			e.printStackTrace();
 		}
 		//Don't deliver right away, we want to make sure we are synchronized with the others first
-		//this.mcui.deliver(this.getId(), " " + message.toString());
+		this.mcui.deliver(message.getId(), message.getTimestamp() + " " + message.toString());
 			
 
 	}
