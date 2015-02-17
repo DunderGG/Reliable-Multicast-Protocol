@@ -51,7 +51,7 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		
 		try
 		{
-			setup = SetupParser.parseFile("mcgui\\localhostsetup");
+			setup = SetupParser.parseFile("mcgui/localhostsetup");
 
 			System.out.println("Contents of setup file: ");
 			for(String[] row : setup)
@@ -160,6 +160,7 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		
 		//Before delivering, we must make sure everyone agrees on the message ordering
 		this.mcui.deliver(recvMsg.getId(), " " + message.toString());
+		System.out.println("Delivered message from peer #" + recvMsg.getId() + " with timestamp " + recvMsg.getTimestamp() + "\n");
 	}
 
 	//Extended from the abstract class Multicaster
