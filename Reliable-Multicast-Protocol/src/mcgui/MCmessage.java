@@ -16,6 +16,8 @@ public class MCmessage extends Message
 	private String message;
 	private int id;
 	private int timestamp;
+	private byte[] hash;
+	
 	
 	//sender must, according to specification, be initialized before the object is used
 	public MCmessage(int sender) 
@@ -58,4 +60,12 @@ public class MCmessage extends Message
 		this.id = id;
 	}
 
+	public byte[] getHash()
+	{
+		return hash;
+	}
+	public void setHash(byte[] hash)
+	{
+		this.hash = hash;
+	}
 }

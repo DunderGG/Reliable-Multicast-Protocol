@@ -1,9 +1,9 @@
 package mcgui;
 
 import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.Iterator;
 
 /*
  * AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
@@ -21,10 +21,12 @@ public class MCmodule extends Multicaster implements MulticasterUI
 {
 	private ArrayList<String[]> setup;
 	private int numberOfClients, myport;
-	private int clockValue;
+	private int logClock;
 	TCPCommunicator communicator;
 	
 	private ArrayList<MCmessage> msgList;
+	
+	MessageDigest md;
 
 	/*
 	 * 
@@ -35,9 +37,18 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		setup = null;
 		numberOfClients = 0;
 		myport = 0;
-		clockValue = 0;
+		logClock = 0;
 		msgList = new ArrayList<MCmessage>();
 		communicator = new TCPCommunicator();
+		
+		try
+		{
+			md = MessageDigest.getInstance("SHA-256");
+		} catch (NoSuchAlgorithmException e)
+		{
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 	
 	/*
@@ -67,7 +78,7 @@ public class MCmodule extends Multicaster implements MulticasterUI
 			numberOfClients = Integer.parseInt(setup.get(0)[0]);
 			System.out.println("\nnumberOfClients = " + numberOfClients);
 			
-			//We add 1 to our id to skip the first line in the setup file, which gives the number of hosts.
+			//We add 1 to our id to skip the first line in the setup file (which gives the number of hosts).
 			String[] myInfo = setup.get(this.id+1);
 			System.out.println("me = " + myInfo[0]);
 			
@@ -92,12 +103,10 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	{
 		System.out.println("Entered function: cast(), I am id #" + this.getId() + " and my port is " + this.myport + "\n");
 		
-		//Try sending the message to all the other hosts.
+		communicator.setMulticaster(this);
+		
 		try
 		{
-			
-			communicator.setMulticaster(this);
-			
 			//Connect to each host.
 			for(String[] host : setup)
 			{				
@@ -107,22 +116,33 @@ public class MCmodule extends Multicaster implements MulticasterUI
 					communicator.connect(this.getId(), host[0], Integer.parseInt(host[1]));
 				}
 			}
-			
-			//Create the message object to be sent to everyone.
-			MCmessage message = new MCmessage(myport);
-			
-			//Set the message to be sent.
-			message.setMessage(messagetext);
-			
-			//Set the timestamp of the message and then increment our clock value.
-			message.setTimestamp(clockValue++);
-			
-			//Set the peer id for the message, to be used for deliver().
-			message.setId(this.getId());
-			
-			//Add the message to our list for future handling.
-			msgList.add(message);
-			
+		} catch (NumberFormatException e)
+		{
+			e.printStackTrace();
+		}
+		
+		//Create the message object to be sent to everyone.
+		MCmessage message = new MCmessage(myport);
+		
+		//Set the message to be sent.
+		message.setMessage(messagetext);
+		
+		//Set the timestamp of the message and then increment our clock value.
+		message.setTimestamp(logClock++);
+		
+		//Set the peer id for the message, to be used for deliver().
+		message.setId(this.getId());
+		
+		//
+		md.update( (message.getMessage()+message.getId()+message.getTimestamp()).getBytes() );
+		byte[] msgHash = md.digest();
+		message.setHash(msgHash);
+		
+		//Add the message to our list for future handling.
+		msgList.add(message);
+		
+		try
+		{
 			//Send to each host.
 			for(int i = 0; i < numberOfClients; i++)
 			{				
@@ -135,14 +155,14 @@ public class MCmodule extends Multicaster implements MulticasterUI
 					communicator.basicsend(i, (Message) message);
 				}
 			}
-			//Don't deliver right away, we want to make sure we are synchronized with the others first
-			//this.mcui.deliver(this.getId(), " " + message.toString());
-			
-		} catch (NumberFormatException e)
+		} catch (Exception e)
 		{
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		//Don't deliver right away, we want to make sure we are synchronized with the others first
+		//this.mcui.deliver(this.getId(), " " + message.toString());
+			
+
 	}
 
 	/*
@@ -151,15 +171,27 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	@Override
 	public void basicreceive(int peer, Message message)
 	{
-		MCmessage recvMsg = (MCmessage) message;
 		System.out.println("Entered function: basicreceive(), I am id #" + this.getId());
+		
+		MCmessage recvMsg = (MCmessage) message;
+		
+		//Add the message to our list of messages
+		msgList.add(recvMsg);
+		
+		if(recvMsg.getTimestamp() >= logClock)
+		{
+			logClock = recvMsg.getTimestamp() + 1;
+		}
 		
 		System.out.println("Received message: " + recvMsg);
 		System.out.println("Message was sent from peer: " + recvMsg.getId());
 		System.out.println("Message had timestamp: " + recvMsg.getTimestamp());
+		System.out.println("Message had hash: " + recvMsg.getHash());
+		
+		
 		
 		//Before delivering, we must make sure everyone agrees on the message ordering
-		this.mcui.deliver(recvMsg.getId(), " " + message.toString());
+		this.mcui.deliver(recvMsg.getId(), recvMsg.getTimestamp() + " " + message.toString());
 		System.out.println("Delivered message from peer #" + recvMsg.getId() + " with timestamp " + recvMsg.getTimestamp() + "\n");
 	}
 
