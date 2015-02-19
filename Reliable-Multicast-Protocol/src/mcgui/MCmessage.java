@@ -12,9 +12,10 @@ package mcgui;
 
 @SuppressWarnings("serial")
 public class MCmessage extends Message 
-{
+{	
 	private String message;
-	private int id;
+	private int type;
+	private String messageID;
 	private int timestamp;
 	private byte[] hash;
 	
@@ -51,15 +52,24 @@ public class MCmessage extends Message
 		this.timestamp = timestamp;
 	}
 	
-	public int getId()
+	public int getsenderID()
 	{
-		return id;
+		return sender;
 	}
-	public void setId(int id)
+	public void setsenderID(int id)
 	{
-		this.id = id;
+		this.sender = id;
 	}
 
+	public String getMessageID()
+	{
+		return messageID;
+	}
+	public void setMessageID(String messageID)
+	{
+		this.messageID = messageID;
+	}
+	
 	public byte[] getHash()
 	{
 		return hash;
@@ -67,5 +77,14 @@ public class MCmessage extends Message
 	public void setHash(byte[] hash)
 	{
 		this.hash = hash;
+	}
+	
+	public int getType()
+	{
+		return type;
+	}
+	public void setType(int type)
+	{
+		this.type = type;
 	}
 }
