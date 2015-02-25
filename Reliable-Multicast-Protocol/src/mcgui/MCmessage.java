@@ -25,7 +25,7 @@ public class MCmessage extends Message
 	{
 		super(sender);
 	
-		System.out.println("Entered Constructor for MCmessage\n");
+		System.out.println("Constructing a new MCmessage...\n");
 
 	}
 	@Override
