@@ -4,43 +4,52 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.UUID;
 
 /*
- * AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
- * Version: 1.0
+ * 		AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
+ * 		VERSION: 	1.0
  * 
- * 		Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
+ * 		COURSE: Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
  *
  *		SOURCE: 	E:\Program\Git\repository\Reliable-Multicast-Protocol\Reliable-Multicast-Protocol\src
  *					~/git/Reliable-Multicast-Protocol/Reliable-Multicast-Protocol/src
  *
  *		RUN WITH: 	java mcgui.Main mcgui.MCmodule 1 mcgui\localhostsetup		
  *
- *		TODO: Implement a reliable and ordered multicast, driven by a provided GUI and pre-setup TCP connections.
- *				Needs to cope with crashing processes, but not joining processes.
+ *		TODO  
+ *				Implement a reliable and ordered multicast, driven by a provided GUI and pre-setup TCP connections.
+ *				Needs to cope with crashing processes, but not re-joining processes.
  *
- * 			As time is extremely limited, I will make a centralized sequencer for the total ordering.
- * 				All nodes send their messages to the sequencer. The message gets a timestamp and is then
- * 				sent to all the hosts. When a host receives a message it updates its own logical clock and
- * 				delivers the messages one at a time. If we receive a message with a timestamp of two (or greater)
- * 				ahead of us, we wait for the previous message first before delivering.
  * 
- * 			Lowest ID (ID 0, first in the file) is the sequencer.
+ * 		FINISHED
+ * 			Total Ordering is now fixed, but might need some refinement as it's very "raw" with only the most basic logic included.
+ * 
+ * 			Lowest ID (ID 0, first in the file) is the sequencer in the start. 
+ * 				New sequencers are then chosen in ascending order.
  * 
  */
 
 public class MCmodule extends Multicaster implements MulticasterUI
 {
-	//Different types of messages
-	public static final int NORMAL = 0;
-	public static final int ACK = 1;
-	public static final int COMMIT = 2;
+	//Only used for debugging purposes
+	private long startTime;
+	private boolean debug;
 	
+	//Different types of messages
+	private static final int NORMAL = 0;
+	private static final int ACK = 1;
+	private static final int COMMIT = 2;
+	
+	//Will keep track of the current sequencer
 	private int sequencer;
 	
+	//Will keep track of which message was last delivered, so we don't deliver a message too early or more than once.
+	private int lastDelivered;
 	
 	//Pretty self-descriptive....
 	private int numberOfClients, myPort;
@@ -70,10 +79,16 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	 */
 	public MCmodule()
 	{		
+		//For debugging purposes
+		startTime = System.currentTimeMillis();
+		debug = true;
+		
+		//Initialize our variables
 		numberOfClients = 0;
 		myPort = 0;
 		logClock = 0;
 		sequencer = 0;
+		lastDelivered = -1;
 				
 		msgList = new ArrayList<MCmessage>();
 		setup = new ArrayList<String[]>();
@@ -88,19 +103,28 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	@Override
 	public void init() 
 	{
-		System.out.println("=========================================");
-		System.out.println("=========================================");
-		System.out.println("===========  START OF PROGRAM  ==========");
-		System.out.println("=========================================");
-		System.out.println("=========================================\n\n");
-		
-		System.out.println("Entered function: init(), I am id #" + this.getId());
-		System.out.println((this.getId() == 0) ? "I'm the sequencer\n" : "I'm not the sequencer\n" );
+		if(debug)
+		{
+			System.out.println("=========================================");
+			System.out.println("=========================================");
+			System.out.println("===========  START OF PROGRAM  ==========");
+			System.out.println("=========================================");
+			System.out.println("=========================================\n\n");
+			
+			System.out.println("Entered function: init(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+			System.out.println((this.getId() == 0) ? "I'm the sequencer\n" : "I'm not the sequencer\n" );
+		}
 		
 		try
 		{
 			setup = SetupParser.parseFile("mcgui/localhostsetup");
-
+		} catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+		
+		if(debug)
+		{
 			System.out.println("Contents of setup file: ");
 			for(String[] row : setup)
 			{
@@ -111,49 +135,51 @@ public class MCmodule extends Multicaster implements MulticasterUI
 				}
 				System.out.println();
 			}
-			//We fill the hostList with the same information...
-			hostList = new ArrayList<String[]>(setup);
-			//But we remove index 0, to skip the "number of clients"-line.
-			hostList.remove(0);
-			
-			numberOfClients = hostList.size();
-			System.out.println("\nnumberOfClients = " + numberOfClients);
-			
-			//We add 1 to our id to skip the first line in the setup file (which gives the number of hosts).
-			String[] myInfo = setup.get(this.id+1);
-			System.out.println("me = " + myInfo[0]);
-			
-            myPort = Integer.parseInt(myInfo[1]);
-            System.out.println("myport = " + myPort);
-
-            System.out.println("Finished initializing, moving on...\n");
-            
-		} catch (IOException e)
-		{
-			e.printStackTrace();
 		}
 		
+		//We fill the hostList with the same information...
+		hostList = new ArrayList<String[]>(setup);
+		//But we remove index 0, to skip the "number of clients"-line.
+		hostList.remove(0);
+		
+		numberOfClients = hostList.size();
+		if(debug)
+			System.out.println("\nnumberOfClients = " + numberOfClients);
+		
+		//We add 1 to our id to skip the first line in the setup file (which gives the number of hosts).
+		String[] myInfo = setup.get(this.id+1);
+		if(debug)
+			System.out.println("me = " + myInfo[0]);
+		
+        myPort = Integer.parseInt(myInfo[1]);
+        if(debug)
+        	System.out.println("myport = " + myPort);
+
 		communicator.setMulticaster(this);
 		
+		if(debug)
+			System.out.println("Our hostList: ");
+		//We want each entry in the hostList to contain the host's ID (same as the index), hostname and port
 		int index = 0;
 		for(String[] host : hostList)
 		{
-			String hostName = hostList.get(index)[0];
-			String port = hostList.get(index)[1];
+			String hostName = host[0];
+			String port = host[1];
 			String[] newEntry = {String.valueOf(index), hostName, port};
-			
 			hostList.set(index, newEntry);
 			
+			if(debug)
+				System.out.println("#" + hostList.get(index)[0] + "\nHostname: " + hostList.get(index)[1] + "\nPort: " + hostList.get(index)[2] + "\n");
 			index++;
 		}
-		
-		
+
 		try
 		{
 			//Connect to each host
 			for(String[] host : hostList)
 			{				
-				System.out.println("Connecting to host " + host[0] + " on port " + host[2]);
+				if(debug)
+					System.out.println("Connecting to host " + host[0] + " on port " + host[2]);
 				communicator.connect(this.getId(), host[1], Integer.parseInt(host[2]));
 			}
 		} catch (NumberFormatException e)
@@ -169,7 +195,8 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	@Override
 	public void cast(String messagetext)
 	{
-		System.out.println("Entered function: cast(), I am id #" + this.getId() + " and my port is " + this.myPort + "\n");
+		if(debug)
+			System.out.println("Entered function: cast(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
 		
 		//Create the message object to be sent to everyone.
 		MCmessage message = new MCmessage(this.getId());
@@ -189,38 +216,8 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		//Set the message type to NORMAL
 		message.setType(NORMAL);
 		
-		//Add the message to our list for future handling.
-		//msgList.add(message);
-		
-		//Put the message in our list of messages to be ACKed
-		//ackList.put(message.getMessageID(), 0);
-		//System.out.println("Number of unacknowledged messages: " + ackList.size());
-		
-		//Only send to the sequencer
+		//Only send to the sequencer, which will set a timestamp and then commit it
 		communicator.basicsend(sequencer, (Message) message);
-		
-		
-		
-		/* DONT SEND TO ALL HOSTS ANYMORE
-		try
-		{
-			int i = 0;
-			//Send to each host.
-			for(String[] host : hostList)
-			{
-				//Send to everyone, including ourselves
-				System.out.println("\nSending to id: " + i);				
-				System.out.println("Sending message: " + message);
-				System.out.println("Message has timestamp: " + message.getTimestamp());
-				//Send the message. Arguments are the host-ID of the intended recipient and the message.
-				communicator.basicsend(i, (Message) message);
-				
-				i++;
-			}
-		} catch (Exception e)
-		{
-			e.printStackTrace();
-		}*/	
 	}
 
 	/*
@@ -229,126 +226,132 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	@Override
 	public void basicreceive(int peer, Message message)
 	{
-		System.out.println("\nEntered function: basicreceive(), I am id #" + this.getId());
+		if(debug)
+			System.out.println("\nEntered function: basicreceive(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
 		
 		MCmessage recvMsg = (MCmessage) message;
 		
-		System.out.println("type = " + recvMsg.getType());
-		
-		//We have received a NORMAL message, so we are the sequencer and need to assign a timestamp
+		//We have received a NORMAL message, so we are the sequencer and need to assign a timestamp.
 		if(recvMsg.getType() == 0)
 		{	
-			System.out.println("========== NORMAL ==================");
-			System.out.println("Message   = " + recvMsg);
-			System.out.println("From      = " + recvMsg.getsenderID());
-			System.out.println("UUID      = " + recvMsg.getMessageID());
-			System.out.println("Timestamp = " + recvMsg.getTimestamp());
-			System.out.println("Hash      = " + recvMsg.getHash());
-			System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
-			System.out.println("====================================\n");
-		
-			//If the message is ahead, just store the message for when we have received previous messages.
-			if(recvMsg.getTimestamp() > logClock)
-				msgList.add(recvMsg);
-			else
-			{	//Otherwise we are likely on track.
-				//Send a COMMIT to the hosts.				
-				sendCommit(recvMsg);
+			if(debug)
+			{
+				System.out.println("========== NORMAL ==================");
+				System.out.println("Message   = " + recvMsg);
+				System.out.println("From      = " + recvMsg.getsenderID());
+				System.out.println("UUID      = " + recvMsg.getMessageID());
+				System.out.println("Timestamp = " + recvMsg.getTimestamp());
+				System.out.println("Hash      = " + recvMsg.getHash());
+				System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
+				System.out.println("====================================\n");
 			}
+		
+			sendCommit(recvMsg);
 			
+			//Put the message in our list of messages to be ACKed by the receiving nodes.
+			ackList.put(recvMsg.getMessageID(), 0);
+			if(debug)
+				System.out.println("Number of unacknowledged messages: " + ackList.size());
 		}
-		//We have received an acknowledgement, currently not used as originally planned (due to implementing a sequencer instead)
+		//We have received an acknowledgement...
 		else if(recvMsg.getType() == 1)
 		{
-			//ackList.put(recvMsg.getMessageID(), ackList.get(recvMsg.getMessageID()) + 1);
+			ackList.put(recvMsg.getMessageID(), ackList.get(recvMsg.getMessageID()) + 1);
+			if(debug)
+			{
+				System.out.println("========== ACK =====================");
+				System.out.println("Message   = " + recvMsg);
+				System.out.println("From      = " + recvMsg.getsenderID());
+				System.out.println("UUID      = " + recvMsg.getMessageID());
+				System.out.println("Timestamp = " + recvMsg.getTimestamp());
+				System.out.println("Hash      = " + recvMsg.getHash());
+				System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
+				System.out.println("The message now has " + ackList.get(recvMsg.getMessageID()) + "/" + hostList.size() + " ACKs");
+				System.out.println("====================================");
+			}	
+			  /////////////////////////////////
+			 //SOME CODE STORED IN MCMODULE2//
+			/////////////////////////////////
 			
-			System.out.println("========== ACK =====================");
-			System.out.println("Message   = " + recvMsg);
-			System.out.println("From      = " + recvMsg.getsenderID());
-			System.out.println("UUID      = " + recvMsg.getMessageID());
-			System.out.println("Timestamp = " + recvMsg.getTimestamp());
-			System.out.println("Hash      = " + recvMsg.getHash());
-			System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
-			//System.out.println("The message now has " + ackList.get(recvMsg.getMessageID()) + "/" + hostList.size() + " ACKs");
-			System.out.println("====================================");
+			//When we receive an ACK, update our ACK list.
+			ackList.put(recvMsg.getMessageID(), ackList.get(recvMsg.getMessageID()) + 1);
 			
-			
-			
-			/* Saved for later, right now I only implement the sequencer-protocol
-			 * 
+			//We check if this was the last needed ACK for a message.
 			if(ackList.get(recvMsg.getMessageID()) == hostList.size())
 			{
-				System.out.println("All ACKs have now been received for message: " + recvMsg.getMessageID());
-				
-				
-				
-				  
-				//We iterate over our list of messages with an Iterator. 
-				// When we find the right message, we deliver it and then remove it from the list.
-				for(Iterator<MCmessage> it = msgList.iterator(); it.hasNext();)
-				{
-					MCmessage msg = it.next();
-					
-					if(msg.getMessageID().equals(recvMsg.getMessageID()))
-					{
-						
-						it.remove();
-						
-						//Also remove the key from our HashMap of messages that needs acknowledgement
-						ackList.remove(msg.getMessageID());
-						System.out.println("Number of unacknowledged messages: " + ackList.size());
-						
-						System.out.println("Sending COMMIT...");
-						sendCommit(msg);
-					}
-				}
-			}	*/
-			
+				//When we have received all ACKs, remove it from the list.
+				ackList.remove(recvMsg.getMessageID());
+			}
 			
 		}
 		//The sequencer has sent us a COMMIT message
 		else if(recvMsg.getType() == 2)
 		{
-			System.out.println("========== COMMIT ==================");
-			System.out.println("Message   = " + recvMsg);
-			System.out.println("From      = " + recvMsg.getsenderID());
-			System.out.println("UUID      = " + recvMsg.getMessageID());
-			System.out.println("Timestamp = " + recvMsg.getTimestamp());
-			System.out.println("Hash      = " + recvMsg.getHash());
-			System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
-			System.out.println("====================================");
-			
-			//If the timestamp is two steps, or more, ahead of us, don't deliver it yet.
-			if(recvMsg.getTimestamp() > this.logClock+1)
+			if(debug)
 			{
+				System.out.println("========== COMMIT ==================");
+				System.out.println("Message   = " + recvMsg);
+				System.out.println("From      = " + recvMsg.getsenderID());
+				System.out.println("UUID      = " + recvMsg.getMessageID());
+				System.out.println("Timestamp = " + recvMsg.getTimestamp());
+				System.out.println("Hash      = " + recvMsg.getHash());
+				System.out.println((checkHash(recvMsg.getHash(), recvMsg) ? "The hash is correct" : "The hash is wrong") );
+				System.out.println("====================================");
+			}	
+			//Check that the message is not ahead of us; if it is, then store it for later.
+			if(recvMsg.getTimestamp() > lastDelivered+1)
+			{
+				if(debug)
+					System.out.println("Can't deliver this message yet, delaying...");
 				msgList.add(recvMsg);
-				
-				System.out.println("#" + this.getId() + ": We are NOT in sync, added msg to list, size is now  " + this.msgList.size());
 			}
-			//If the timestamp is lower than our logical clock, we have already received the message
-			else if((recvMsg.getTimestamp() < this.logClock && this.getId() != sequencer) ||
-					//The sequencer needs special treatment
-					(recvMsg.getTimestamp() < this.logClock-1 && this.getId() == sequencer))
+			//Check that it's not a message we have already delivered (to respect INTEGRITY)
+			else if(recvMsg.getTimestamp() <= lastDelivered)
 			{
-				System.out.println("Received a duplicate, timestamp: " + recvMsg.getTimestamp() + " logClock: " + this.logClock);
+				if(debug)
+					System.out.println("Already delivered this message, ignoring...");
 			}
+			//If the message is not ahead of us, deliver it.
 			else
-			{	//Otherwise, deliver it.
-				//Also send an acknowledgement back.
-				if(this.getId() != sequencer)
-				{	//We are not the sequencer, so set our logical clock to what the sequencer gave us.
-					System.out.println("We are not the sequencer, taking his timestamp: " + recvMsg.getTimestamp());
-					this.logClock = recvMsg.getTimestamp();
-				}
-				else
-				{	//If we are the sequencer, we already incremented our logical clock before sending the COMMIT.
-					System.out.println("We are the sequencer, just increment our clock");
-					//this.logClock++;
-				}
-				
-				System.out.println("#" + this.getId() + ": We are in sync, my clock is now " + this.logClock);
-				sendAck(recvMsg);
+			{
+				if(debug)
+					System.out.println("Correct message received, delivering...");
+				lastDelivered++;
 				this.mcui.deliver(recvMsg.getsenderID(), recvMsg.getTimestamp() + " " + recvMsg.toString());
+				
+				sendAck(recvMsg);
+				
+				//If we are not the sequencer, we update our logical clock to stay up to date.
+				if(this.getId() != sequencer)
+					logClock = Math.max(recvMsg.getTimestamp(), logClock) + 1;
+				if(debug)
+					System.out.println("Updated our logical clock to: " + logClock);
+				
+			}
+			
+			if(debug)
+				System.out.println("Checking msgList... lastDelivered = " + lastDelivered);
+			//After we have delivered a message, and if our msgList is not empty,
+			//see if we can deliver any of the saved messages.
+			//We keep looping through the list until we have delivered all messages allowed (to respect VALIDITY).
+			for(Iterator<MCmessage> it = msgList.iterator(); it.hasNext();)
+			{
+				//Iterate over all available messages
+				MCmessage msg = it.next();
+				if(debug)
+					System.out.println("msg timestamp = " + msg.getTimestamp() + "message = " + msg.getMessage());
+				if(msg.getTimestamp() == lastDelivered+1)
+				{
+					
+					if(debug)System.out.println("Found a message to deliver, timestamp = " + msg.getTimestamp());
+					this.mcui.deliver(msg.getsenderID(), msg.getTimestamp() + " " + msg.toString());
+					it.remove();
+
+					if(debug)
+						System.out.println("Resetting iterator to start of list...");
+					//Iterate over the msgList from the start again, after having removed a message.
+					it = msgList.iterator();
+				}
 			}
 		}
 		
@@ -356,12 +359,15 @@ public class MCmodule extends Multicaster implements MulticasterUI
 
 	private void sendCommit(MCmessage msg)
 	{
+		if(debug)
+			System.out.println("Entered function: sendCommit(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+		
 		//We need to COMMIT the message received
 		MCmessage comMsg = new MCmessage(this.getId());
 		//Set the message type to COMMIT
 		comMsg.setType(COMMIT);
 		
-		//The sequencer settles the timestamp on the message.
+		//The sequencer sets the timestamp on the message.
 		comMsg.setTimestamp(this.logClock++);
 		
 		//Use the same values as the original message
@@ -376,48 +382,51 @@ public class MCmodule extends Multicaster implements MulticasterUI
 		{
 			int i = 0;
 			//Send to all hosts the message to be delivered.
-			//To handle failure of hosts we need to change "i" to something more dynamic, taken from our hostList.
 			for(String[] host : hostList)
 			{				
 				//Send to everyone, including ourselves
-				System.out.println("Sending COMMIT to peer #" + i);
+				if(debug)
+					System.out.println("Sending COMMIT to peer #" + i);
 				//Send the message. Arguments are the host-ID of the intended recipient and the message.
 				communicator.basicsend(Integer.parseInt(host[0]), (Message) comMsg);
 				
 				i++;
 			}
-		} catch (Exception e)
-		{
-			e.printStackTrace();
-		}
+		} catch (Exception e){e.printStackTrace();}
 	}
 
 	private void sendAck(MCmessage msg)
 	{
+		if(debug)
+			System.out.println("Entered function: sendAck(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+		
 		//We need to ACKNOWLEDGE the message received
-		
 		MCmessage ackMsg = new MCmessage(this.getId());
-		
-		ackMsg.setMessageID(msg.getMessageID());
-		
-		//Set the timestamp of the message and then increment our clock value.
-		ackMsg.setTimestamp(msg.getTimestamp());
-		
-		//Add the hash to the message.
-		ackMsg.setHash(produceHash(ackMsg));
 		
 		//Set the message type to ACK
 		ackMsg.setType(ACK);
 		
-		communicator.basicsend(msg.getsenderID(), (Message) ackMsg);
+		//Set the timestamp and message id of the message to be the same as the original.
+		ackMsg.setTimestamp(msg.getTimestamp());
+		ackMsg.setMessageID(msg.getMessageID());
+		
+		//Since it's just an acknowledgement, we don't need an actual message
+		ackMsg.setMessage("");
+		
+		//Create a new hash for the message.
+		ackMsg.setHash(produceHash(ackMsg));
+		
+		//Only the sequencer keeps track of the not-ACKnowledged messages.
+		communicator.basicsend(sequencer, (Message) ackMsg);
+		
 	}
 
 	//Extended from the abstract class Multicaster
 	@Override
 	public void basicpeerdown(int peer)
 	{
-		System.out.println("Entered function: basicpeerdown(), I am id #" + this.getId());		
-		
+		if(debug)
+			System.out.println("Entered function: basicpeerdown(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));		
 		
 		//We iterate over our list of messages with an Iterator. 
 		// When we find the right message, we deliver it and then remove it from the list.
@@ -427,12 +436,14 @@ public class MCmodule extends Multicaster implements MulticasterUI
 			
 			if(Integer.parseInt(host[0]) == peer)
 			{
-				System.out.println("Detected a crash, removing host #" + peer);
+				if(debug)
+					System.out.println("Detected a crash, removing host #" + peer);
 				listIterator.remove();
 				
 				if(peer == sequencer)
 				{
-					System.out.println("Crashed host was the sequencer, select a new one");
+					if(debug)
+						System.out.println("Crashed host was the sequencer, select a new one");
 					selectNewSeq(peer);
 				}
 			}
@@ -443,94 +454,87 @@ public class MCmodule extends Multicaster implements MulticasterUI
 	
 	private void selectNewSeq(int peer)
 	{
-		System.out.println("The crashed peer was the sequencer, selecting a new one...");
-		
+		if(debug)
+			System.out.println("Entered function: selectNewSeq(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+
 		if(hostList.size() > 0)
 		{
-			sequencer = sequencer + 1;
+			//Make sure our hostList is sorted according to host IDs...
+			Collections.sort(hostList, new Comparator<String[]>()
+			{
+				@Override
+				public int compare(String[] str1, String[] str2){return str1[0].compareTo(str2[0]);}}
+			);
+		
+			if(debug)
+			{
+				System.out.println("Contents of hostList after custom sort: ");
+				for(String[] host : hostList)
+				{
+					System.out.println("#" + host[0] + "\nHostname: " + host[1] + "\nPort: " + host[2] + "\n");
+				}
+			}
+			
+			//And then choose the next sequencer according to IDs sorted in ascending order
+			sequencer = Integer.parseInt(hostList.get(0)[0]);
 		}
 		else
 		{
-			System.out.println("No more hosts...");
+			if(debug)
+				System.out.println("No more hosts...");
 		}
 		
-		System.out.println(sequencer==this.getId() ? "The sequencer is now me" : "The sequencer is now " + sequencer);
+		if(debug)
+			System.out.println(sequencer==this.getId() ? "The sequencer is now me" : "The sequencer is now " + sequencer);
 	}
 
-	/*
-	 * 	Implemented from the interface MulticasterUI
-	 * 	ARGUMENTS:
-	 * 		from 		= the host we received the message from
-	 * 		message 	= the message contained inside
-	 * 		info 		= right now it's the timestamp
-	 */
+	
 	@Override
 	public void deliver(int from, String message, String info)
 	{
-		// TODO Auto-generated method stub
-		
-		
 	}
 	
-	/*
-	 * 	Implemented from the interface MulticasterUI
-	 * 	ARGUMENTS:
-	 * 		from 		= the host we received the message from
-	 * 		message 	= the message contained inside
-	 */
+
 	@Override
 	public void deliver(int from, String message)
 	{
-		// TODO Auto-generated method stub
-		
 	}
-	/*
-	 * Implemented from the interface MulticasterUI
-	 */
+
 	@Override
 	public void debug(String string)
 	{
-		// TODO Auto-generated method stub
-		
 	}
-	/*
-	 * Implemented from the interface MulticasterUI
-	 */
+
 	@Override
 	public void enableSending()
 	{
-		// TODO Auto-generated method stub
-		
 	}
+	
 
 	private byte[] produceHash(MCmessage message)
 	{
+		if(debug)
+			System.out.println("Entered function: produceHash(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+		
 		//Will be used for creating a SHA-256 hash of the message to be sent
 		MessageDigest md = null;
 		
 		try
 		{
 			md = MessageDigest.getInstance("SHA-256");
-		} catch (NoSuchAlgorithmException e)
-		{
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		} catch (NoSuchAlgorithmException e){e.printStackTrace();}
 		
 		//Create a SHA-256 hash of the message + host-ID + timestamp.
-		md.update( (message.getMessage()+message.getsenderID()+message.getTimestamp()).getBytes() );
+		md.update((message.getMessage()+message.getsenderID()+message.getTimestamp()).getBytes());
 		
-		byte[] msgHash = md.digest();
-		
-		return msgHash;
+		return md.digest();
 	}
 	//Check if the received hash is the same as the calculated one
 	public Boolean checkHash(byte[] msgHash, MCmessage msg)
 	{
-		
-		byte[] digestb = produceHash(msg);
-		
-		return MessageDigest.isEqual(msgHash, digestb);
+		if(debug)
+			System.out.println("Entered function: checkHash(), I am id #" + this.getId() + "\nAt time: " + (System.currentTimeMillis() - startTime));
+		return MessageDigest.isEqual(msgHash, produceHash(msg));
 	}
 
 }

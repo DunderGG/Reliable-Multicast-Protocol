@@ -1,18 +1,24 @@
 package mcgui;
 
 /*
- * AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
- * Version: 1.0
+ * 		AUTHOR: 	David Bennehag (David.Bennehag@Gmail.com)
+ * 		VERSION: 	1.0
  * 
- * 		Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
+ * 		COURSE: Distributed Systems, Advanced (MPCSN, Chalmers University of Technology)
  *		
- *		TODO:  
+ *		TODO
+ *
+ * 		FINISHED
  * 
  */
 
+
 @SuppressWarnings("serial")
 public class MCmessage extends Message 
-{	
+{
+	//Only used for debugging purposes
+	private boolean debug;
+	
 	private String message;
 	private int type;
 	private String messageID;
@@ -24,8 +30,12 @@ public class MCmessage extends Message
 	public MCmessage(int sender) 
 	{
 		super(sender);
+		
+		//For debugging purposes
+		debug = false;
 	
-		System.out.println("Constructing a new MCmessage...\n");
+		if(debug)
+			System.out.println("Constructing a new MCmessage...\n");
 
 	}
 	@Override
