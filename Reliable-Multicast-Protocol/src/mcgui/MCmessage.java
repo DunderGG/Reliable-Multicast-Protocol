@@ -25,8 +25,11 @@ public class MCmessage extends Message
 	private int timestamp;
 	private byte[] hash;
 	
+	private int acks;
 	
-	//sender must, according to specification, be initialized before the object is used
+	/*
+	 * Constructor
+	 */
 	public MCmessage(int sender) 
 	{
 		super(sender);
@@ -38,6 +41,7 @@ public class MCmessage extends Message
 			System.out.println("Constructing a new MCmessage...\n");
 
 	}
+	
 	@Override
 	public String toString()
 	{
@@ -96,5 +100,15 @@ public class MCmessage extends Message
 	public void setType(int type)
 	{
 		this.type = type;
+	}
+
+	public int getAcks()
+	{
+		return acks;
+	}
+
+	public void setAcks(int acks)
+	{
+		this.acks = acks;
 	}
 }
